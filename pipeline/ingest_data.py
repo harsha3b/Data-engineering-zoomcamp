@@ -61,7 +61,7 @@ def run_ingestion_pipeline():
     # Configuration
     year, month = 2021, 1
     url = f'https://github.com/DataTalksClub/nyc-tlc-data/releases/download/yellow/yellow_tripdata_{year}-{month:02d}.csv.gz'
-    target_table = "yellow_taxi_data"
+    target_table = f"yellow_taxi_data_{year}_{month:02d}"
     chunk_size = 100000
 
     # Resource Initialization
