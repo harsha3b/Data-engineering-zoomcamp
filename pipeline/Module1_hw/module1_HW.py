@@ -38,6 +38,10 @@ print(df2.loc[[263, 264]])
 df['PULocationID'] = df['PULocationID'].astype('Int64')
 df['DOLocationID'] = df['DOLocationID'].astype('Int64')
 
+# Reset index to start at 1
+df.index = df.index + 1
+df2.index = df2.index + 1
+
 # Connect to DB
 engine = create_engine('postgresql+psycopg://root:root@localhost:5432/ny_taxi')
 
@@ -45,15 +49,15 @@ engine = create_engine('postgresql+psycopg://root:root@localhost:5432/ny_taxi')
 print("\nCreating green_taxi_data table...")
 print(pd.io.sql.get_schema(df, name='green_taxi_data', con=engine))
 
-df.head(n=0).to_sql(name='green_taxi_data', con=engine, if_exists='replace')
+df.head(n=0).to_sql(name='green_taxi_data', con=engine, if_exists='replace', index=True)
 print("Inserting data...")
-df.to_sql(name='green_taxi_data', con=engine, if_exists='append', index=False, chunksize=10000)
+df.to_sql(name='green_taxi_data', con=engine, if_exists='append', index=True, chunksize=10000)
 print(f"Inserted {len(df)} rows into green_taxi_data")
 
 # Create and insert zone data
 print("\nCreating taxi_zone_data table...")
-df2.head(n=0).to_sql(name='taxi_zone_data', con=engine, if_exists='replace')
-df2.to_sql(name='taxi_zone_data', con=engine, if_exists='append', index=False)
+df2.head(n=0).to_sql(name='taxi_zone_data', con=engine, if_exists='replace', index=True)
+df2.to_sql(name='taxi_zone_data', con=engine, if_exists='append', index=True)
 print(f"Inserted {len(df2)} rows into taxi_zone_data")
 
 print("\nDone!")
