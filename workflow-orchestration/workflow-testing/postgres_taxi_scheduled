@@ -3,6 +3,12 @@ namespace: zoomcamp
 description: |
   Best to add a label `backfill:true` from the UI to track executions created via a backfill.
   CSV data used here comes from: https://github.com/DataTalksClub/nyc-tlc-data/releases
+  
+  BACKFILL OPERATIONS NOTE:
+  When executing backfill operations, ensure that the logic accounts for established schedule triggers.
+  For instance, a backfill spanning January and February 2019 must incorporate the 9 AM trigger logic
+  for both the January and February 1st data loads to maintain consistency with the standard Green Taxi
+  ingestion routine. This ensures data integrity and prevents timing misalignments with scheduled workflows.
 
 concurrency:
   limit: 1
@@ -273,3 +279,5 @@ triggers:
     cron: "0 10 1 * *"
     inputs:
       taxi: yellow
+
+ 
