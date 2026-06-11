@@ -1,3 +1,11 @@
+# Static External IP Address
+resource "google_compute_address" "de_static_ip" {
+  name         = "${var.vm_name}-static-ip"
+  address_type = "EXTERNAL"
+  region       = var.region
+  address      = null  # Let GCP assign an available static IP
+}
+
 # Data Engineering VM on GCP
 resource "google_compute_instance" "de_sandbox" {
   name         = var.vm_name
@@ -17,7 +25,7 @@ resource "google_compute_instance" "de_sandbox" {
   network_interface {
     network = var.network
     access_config {
-      // empty config gives the vm a public ip address so you can ssh into it
+      nat_ip = google_compute_address.de_static_ip.address
     }
   }
 

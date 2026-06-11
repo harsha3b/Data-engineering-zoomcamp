@@ -9,6 +9,11 @@ output "vm_instance_id" {
   value       = google_compute_instance.de_sandbox.id
 }
 
+output "vm_static_ip" {
+  description = "Static external IP address of the VM"
+  value       = google_compute_address.de_static_ip.address
+}
+
 output "vm_public_ip" {
   description = "Public IP address of the VM"
   value       = google_compute_instance.de_sandbox.network_interface[0].access_config[0].nat_ip
