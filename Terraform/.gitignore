@@ -1,0 +1,55 @@
+# Terraform files
+.terraform/
+*.tfplan
+*.tfstate
+*.tfstate.*
+.terraform.lock.hcl
+# Crash log files
+crash.log
+crash.*.log
+# .terraformignore is also used by some tools, but not by Terraform core
+.terraformignore
+
+# Security-related files
+# Private keys and certificates
+*.pem
+*.key
+*.ppk
+*.pub
+*.crt
+*.cer
+*.cert
+*.p12
+*.pfx
+*.jks
+# SSH keys
+id_rsa
+id_rsa.*
+id_ecdsa
+id_ecdsa.*
+id_ed25519
+id_ed25519.*
+known_hosts
+# Environment and credentials
+.env
+.env.local
+.env.*.local
+*.tfvars
+!*.tfvars.example
+# AWS credentials
+aws_credentials
+aws_config
+~/.aws/credentials
+# GCP service account keys
+*.json
+service-account-key.json
+# Azure credentials
+.azure/
+# SSH config
+.ssh/
+# Sensitive outputs and backups
+*.backup
+*.bak
+*.swp
+*.swo
+*~
