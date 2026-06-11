@@ -1,0 +1,28 @@
+# GCP Project Configuration
+credentials = \"./keys/my-service-account.json\"  # Path to your GCP service account JSON file
+project     = \"your-gcp-project-id\"             # Replace with your actual GCP project ID
+region      = \"us-central1\"
+project_zone = \"us-central1-a\"
+
+# VM Configuration
+vm_name          = \"data-engineering-vm\"
+machine_type     = \"e2-highmem-4\"  # 4 vCPUs, 32GB RAM
+boot_disk_image  = \"ubuntu-os-cloud/ubuntu-2204-lts\"
+boot_disk_size   = 50
+boot_disk_type   = \"pd-standard\"
+network          = \"default\"
+network_tags     = [\"http-server\", \"https-server\"]
+
+# Optional: Startup script to run on first boot
+startup_script = \"\"\"
+#!/bin/bash
+apt-get update
+apt-get install -y python3-pip
+\"\"\"
+
+# GCS Bucket (optional - leave as null to skip)
+gcs_bucket_name  = null  # Set to a unique bucket name to create
+gcs_storage_class = \"STANDARD\"
+
+# BigQuery Dataset (optional - leave as null to skip)
+bq_dataset_name  = null  # Set to a dataset name to create (use underscores, not hyphens)
