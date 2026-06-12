@@ -3,7 +3,6 @@
 __pycache__/
 *.py[codz]
 *$py.class
-*.env_encoded
 
 # C extensions
 *.so
@@ -151,6 +150,7 @@ activemq-data/
 
 # Environments
 .env
+.env_encoded
 .envrc
 .venv
 env/
