@@ -1,0 +1,14 @@
+id: print_gcp_key
+namespace: zoomcamp
+
+# title: Print GCP Service Account Key
+# description: A simple workflow to print the encoded GCP Service Account key from a secret.
+
+tasks:
+  - id: print_encoded_key
+    type: io.kestra.plugin.scripts.shell.Commands
+    env:
+      GCP_SA_KEY: "{{ secret('GCP_SERVICE_ACCOUNT') }}"
+    commands:
+      - echo "Encoded GCP Service Account Key:"
+      - echo "$GCP_SA_KEY"
