@@ -60,6 +60,8 @@ services:
       - kestra_data:/app/storage
       - /var/run/docker.sock:/var/run/docker.sock
       - kestra_tmp:/tmp/kestra-wd
+    env_file:
+      - .env
     environment:
       KESTRA_CONFIGURATION: |
         datasources:
@@ -85,6 +87,8 @@ services:
             tmpDir:
               path: /tmp/kestra-wd/tmp
           url: http://localhost:8080/
+          secret:
+            type: env
     ports:
       - "8080:8080"
       - "8081:8081"
