@@ -8,13 +8,13 @@ namespace: zoomcamp
 tasks:
   # Prints the base64-encoded service account key to confirm the secret is
   # accessible before the GCP tasks run.
-  - id: print_encoded_key
-    type: io.kestra.plugin.scripts.shell.Commands
-    env:
-      GCP_SA_KEY: "{{ secret('GCP_SERVICE_ACCOUNT') }}"  # loaded from Kestra secret store
-    commands:
-      - echo "Encoded GCP Service Account Key:"
-      - echo "$GCP_SA_KEY"
+  # - id: print_encoded_key
+  #   type: io.kestra.plugin.scripts.shell.Commands
+  #   env:
+  #     GCP_SA_KEY: "{{ secret('GCP_SERVICE_ACCOUNT') }}"  # loaded from Kestra secret store
+  #   commands:
+  #     - echo "Encoded GCP Service Account Key:"
+  #     - echo "$GCP_SA_KEY"
 
   # Creates a GCS bucket in the configured region. Skips silently if it already exists.
   - id: create_gcs_bucket
