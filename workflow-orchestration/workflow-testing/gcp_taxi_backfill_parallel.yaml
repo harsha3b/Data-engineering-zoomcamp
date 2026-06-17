@@ -1,14 +1,14 @@
-id: gcp_taxi_backfill_for_each
+id: gcp_taxi_backfill_parallel
 namespace: zoomcamp
 description: |
   Generates all taxi/year/month combinations via a Python script,
-  then uses a single flat EachSequential loop to call gcp_taxi
-  as a subflow for each combination.
+  then uses EachParallel with a concurrencyLimit to call gcp_taxi
+  as a subflow for each combination concurrently.
   Total runs: 2 taxi types x 2 years x 12 months = 48 subflow executions.
+  concurrencyLimit: 4 means 4 subflows run at a time instead of all 48 at once.
 
 tasks:
   # Step 1: Generate all combinations programmatically.
-  # Outputs a list of dicts to vars.combinations, which the next task reads.
   # To add more years or taxi types, just extend the lists here.
   - id: generate_combinations
     type: io.kestra.plugin.scripts.python.Script
@@ -26,13 +26,16 @@ tasks:
           for m in months
       ]
 
-      # Expose the list as a flow output so EachSequential can consume it
+      # Expose the list as a flow output so EachParallel can consume it
       Kestra.outputs({"combinations": combinations})
 
-  # Step 2: Iterate over the flat combinations list.
-  # Switch to EachParallel here if you want concurrent subflow execution.
+  # Step 2: Iterate over combinations in parallel with a concurrency cap.
+  # concurrencyLimit: 4 means at most 4 subflows run simultaneously,
+  # preventing GCP rate limits and quota exhaustion.
+  # Increase the limit if GCP quotas allow; decrease if you see throttling errors.
   - id: for_each_combination
-    type: io.kestra.plugin.core.flow.EachSequential
+    type: io.kestra.plugin.core.flow.EachParallel
+    concurrencyLimit: 4
     value: "{{outputs.generate_combinations.vars.combinations}}"
     tasks:
 
@@ -46,5 +49,5 @@ tasks:
           taxi: "{{taskrun.value.taxi}}"
           year: "{{taskrun.value.year}}"
           month: "{{taskrun.value.month}}"
-        wait: true          # wait for subflow to finish before starting next combination
-        transmitFailed: true  # fail the parent flow if any subflow fails
+        wait: true           # wait for subflow to finish before freeing the concurrency slot
+        transmitFailed: true # mark parent as failed if any subflow fails, but others keep running

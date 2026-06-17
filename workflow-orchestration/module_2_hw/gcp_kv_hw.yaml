@@ -14,14 +14,14 @@ tasks:
     kvType: STRING
     value: europe-west2
 
-  - id: gcp_bucket_name
+  - id: gcp_bucket_name_hw
     type: io.kestra.plugin.core.kv.Set
-    key: GCP_BUCKET_NAME
+    key: GCP_BUCKET_NAME_HW
     kvType: STRING
     value: kestra-sandbox-harsha-314_hw # TODO make sure it's globally unique!
 
-  - id: gcp_dataset
+  - id: gcp_dataset_hw
     type: io.kestra.plugin.core.kv.Set
-    key: GCP_DATASET
+    key: GCP_DATASET_HW
     kvType: STRING
     value: zoomcamp_hw_dataset
