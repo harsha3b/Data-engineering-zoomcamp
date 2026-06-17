@@ -1,0 +1,40 @@
+id: gcp_taxi_backfill
+namespace: zoomcamp
+description: |
+  Loops over all combinations of taxi type, year, and month
+  and calls the 08_gcp_taxi subflow for each combination.
+  Total runs: 2 taxi types x 2 years x 12 months = 48 subflow executions.
+
+tasks:
+  # Outer loop: iterates over taxi types one at a time
+  - id: each_taxi
+    type: io.kestra.plugin.core.flow.EachSequential
+    value: ["yellow", "green"]
+    tasks:
+
+      # Middle loop: for each taxi type, iterates over years
+      - id: each_year
+        type: io.kestra.plugin.core.flow.EachSequential
+        value: ["2019", "2020"]
+        tasks:
+
+          # Inner loop: for each year, iterates over all 12 months
+          - id: each_month
+            type: io.kestra.plugin.core.flow.EachSequential
+            value: ["01", "02", "03", "04", "05", "06", "07", "08", "09", "10", "11", "12"]
+            tasks:
+
+              # Calls 08_gcp_taxi once per combination, passing the current loop values as inputs.
+              # taskrun.value         = current month  (innermost loop)
+              # parents[0].taskrun.value = current year   (one level up)
+              # parents[1].taskrun.value = current taxi   (two levels up)
+              - id: load_data
+                type: io.kestra.plugin.core.flow.Subflow
+                namespace: zoomcamp
+                flowId: 08_gcp_taxi
+                inputs:
+                  taxi: "{{parents[1].taskrun.value}}"
+                  year: "{{parents[0].taskrun.value}}"
+                  month: "{{taskrun.value}}"
+                wait: true          # wait for subflow to finish before starting next month
+                transmitFailed: true  # fail the parent flow if any subflow fails
