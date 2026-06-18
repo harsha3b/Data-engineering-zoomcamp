@@ -1,0 +1,60 @@
+id: gcp_taxi_backfill_parallel_hw
+namespace: zoomcamp
+concurrency:
+  behavior: QUEUE
+  limit: 2
+description: |
+  Generates all taxi/year/month combinations via a Python script,
+  then uses EachParallel with a concurrencyLimit to call gcp_taxi_hw
+  as a subflow for each combination concurrently.
+  Total runs: 2 taxi types x 1 year x 12 months = 24 subflow executions.
+  All subflows run concurrently via EachParallel.
+  The parallel concurrency limit is set to 2, so only 2 subflows run at a time. 
+  But when i ran all of the flows ran at once. It didnt work. For now i am using
+  EachSequential to run the flows one by one. I will try to fix it later.
+
+#TODO: Fix the concurrency limit issue. It should run 2 flows at a time, but it ran all of them at once. I will try to fix it later.
+
+tasks:
+  # Step 1: Generate all combinations programmatically.
+  # To add more years or taxi types, just extend the lists here.
+  - id: generate_combinations
+    type: io.kestra.plugin.scripts.python.Script
+    beforeCommands:
+      - pip install kestra -q
+    script: |
+      from kestra import Kestra
+
+      taxis  = ["yellow", "green"]
+      # years  = ["2019", "2020"]
+      years  = ["2021"]
+      months = ["01", "02", "03", "04", "05", "06", "07", "08", "09", "10", "11", "12"]
+
+      combinations = [
+          {"taxi": t, "year": y, "month": m}
+          for t in taxis
+          for y in years
+          for m in months
+      ]
+
+      # Expose the list as a flow output so EachParallel can consume it
+      Kestra.outputs({"combinations": combinations})
+
+  # Step 2: Iterate over all combinations in parallel.
+  - id: for_each_combination
+    type: io.kestra.plugin.core.flow.EachParallel
+    value: "{{outputs.generate_combinations.vars.combinations}}"
+    tasks:
+
+      # For each combination dict, call gcp_taxi_hw with the matching inputs.
+      # taskrun.value is the current dict e.g. {taxi: yellow, year: 2019, month: 01}
+      - id: load_data
+        type: io.kestra.plugin.core.flow.Subflow
+        namespace: zoomcamp
+        flowId: gcp_taxi_hw
+        inputs:
+          taxi: "{{taskrun.value | jq('.taxi') | first}}"
+          year: "{{taskrun.value | jq('.year') | first}}"
+          month: "{{taskrun.value | jq('.month') | first}}"
+        wait: true           # wait for subflow to finish before freeing the concurrency slot
+        transmitFailed: true # mark parent as failed if any subflow fails, but others keep running
