@@ -4,6 +4,8 @@ description: |
   Loops over all combinations of taxi type, year, and month
   and calls the gcp_taxi subflow for each combination.
   Total runs: 2 taxi types x 2 years x 12 months = 48 subflow executions.
+  
+#Note: This flow was not used in kestra. SO there could be issues while running.
 
 tasks:
   # Outer loop: iterates over taxi types one at a time
@@ -32,9 +34,10 @@ tasks:
                 type: io.kestra.plugin.core.flow.Subflow
                 namespace: zoomcamp
                 flowId: gcp_taxi
+                # the text is sent in a json format so need the jq('.taxi') to get the value of taxi from the json file
                 inputs:
-                  taxi: "{{parents[1].taskrun.value}}"
-                  year: "{{parents[0].taskrun.value}}"
-                  month: "{{taskrun.value}}"
+                  taxi: "{{taskrun.value | jq('.taxi') | first}}"
+                  year: "{{taskrun.value | jq('.year') | first}}"
+                  month: "{{taskrun.value | jq('.month') | first}}"
                 wait: true          # wait for subflow to finish before starting next month
                 transmitFailed: true  # fail the parent flow if any subflow fails
