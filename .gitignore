@@ -1,8 +1,26 @@
 *.parquet
 # Byte-compiled / optimized / DLL files
+
+# credentials — never commit
+.dbt/
+.env
+
+# Python
+.venv/
+*.pyc
+.python-version
 __pycache__/
 *.py[codz]
 *$py.class
+
+# dbt
+target/
+dbt_packages/
+logs/
+
+
+*.pyc
+.python-version
 
 # C extensions
 *.so
@@ -219,3 +237,4 @@ __marimo__/
 # Streamlit
 .streamlit/secrets.toml
 *.json
+harsha_gcp_access/
