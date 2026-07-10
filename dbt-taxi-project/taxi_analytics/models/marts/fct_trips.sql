@@ -1,6 +1,25 @@
+
+{{
+    config(
+        materialized='incremental',
+        unique_key='unique_row_id',
+        incremental_strategy='merge',
+        partition_by={
+            "field": "pickup_datetime",
+            "data_type": "timestamp",
+            "granularity": "day"
+        },
+        cluster_by=["pickup_borough"]
+    )
+}}
+
 with trips as (
 
     select * from {{ ref('stg_green_tripdata') }}
+
+    {% if is_incremental() %}
+    where pickup_datetime > (select max(pickup_datetime) from {{ this }})
+    {% endif %}
 
 ),
 
@@ -26,12 +45,10 @@ final as (
         trips.rate_code_id,
         trips.trip_type,
 
-        -- pickup zone info
         trips.pickup_location_id,
         pickup_zone.borough as pickup_borough,
         pickup_zone.zone    as pickup_zone,
 
-        -- dropoff zone info
         trips.dropoff_location_id,
         dropoff_zone.borough as dropoff_borough,
         dropoff_zone.zone    as dropoff_zone,
@@ -55,7 +72,6 @@ final as (
     left join dropoff_zone
         on trips.dropoff_location_id = dropoff_zone.location_id
 
-    -- basic quality filters: business logic belongs here, not in staging
     where trips.trip_distance > 0
       and trips.fare_amount > 0
 
