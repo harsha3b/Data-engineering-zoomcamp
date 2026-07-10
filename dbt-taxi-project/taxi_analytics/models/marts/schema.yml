@@ -1,0 +1,29 @@
+# models/marts/schema.yml
+version: 2
+
+models:
+  - name: fct_trips
+    description: "Fact table: one row per green taxi trip, with pickup/dropoff zone names denormalized in. Filtered to trips with positive distance and fare."
+    columns:
+      - name: unique_row_id
+        description: "Unique identifier for each trip."
+        tests:
+          - unique
+          - not_null
+      - name: pickup_borough
+        description: "Borough where the trip started."
+        tests:
+          - not_null
+      - name: dropoff_borough
+        description: "Borough where the trip ended."
+        tests:
+          - not_null
+      - name: payment_type
+        description: "Coded payment method (1-6). NULL where unrecorded by the driver."
+        tests:
+          - accepted_values:
+              arguments:
+                values: [1, 2, 3, 4, 5, 6]
+                quote: false
+              config:
+                where: "payment_type is not null"
