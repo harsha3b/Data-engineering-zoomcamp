@@ -1,0 +1,58 @@
+id: dbt_build
+namespace: zoomcamp
+
+triggers:
+  - id: after_gcp_setup
+    type: io.kestra.plugin.core.trigger.Flow
+    conditions:
+      - type: io.kestra.plugin.core.condition.ExecutionStatus
+        in:
+          - SUCCESS
+      - type: io.kestra.plugin.core.condition.ExecutionFlow
+        namespace: zoomcamp
+        flowId: gcp_setup_hw
+
+tasks:
+  - id: dbt_pipeline
+    type: io.kestra.plugin.core.flow.WorkingDirectory
+    tasks:
+
+      - id: clone_repository
+        type: io.kestra.plugin.git.Clone
+        url: https://github.com/harsha3b/Data-engineering-zoomcamp
+        branch: main
+
+      - id: write_gcp_keyfile
+        type: io.kestra.plugin.scripts.shell.Commands
+        taskRunner:
+          type: io.kestra.plugin.scripts.runner.docker.Docker
+        containerImage: python:3.11-slim
+        commands:
+          - printf '%s' '{{ secret("GCP_SERVICE_ACCOUNT") }}' > dbt-taxi-project/taxi_analytics/gcp-key.json
+
+      - id: dbt_build
+        type: io.kestra.plugin.dbt.cli.DbtCLI
+        projectDir: dbt-taxi-project/taxi_analytics
+        taskRunner:
+          type: io.kestra.plugin.scripts.runner.docker.Docker
+        containerImage: python:3.11-slim
+        beforeCommands:
+          - pip install --quiet uv
+          - uv venv --quiet
+          - . .venv/bin/activate --quiet
+          - uv pip install --quiet dbt-core dbt-bigquery
+        commands:
+          - dbt build --profiles-dir .
+        profiles: |
+          taxi_analytics:
+            target: prod
+            outputs:
+              prod:
+                type: bigquery
+                method: service-account
+                keyfile: "dbt-taxi-project/taxi_analytics/gcp-key.json"
+                project: kestra-sandbox-499212
+                dataset: dbt_harsha
+                location: europe-west2
+                threads: 4
+                job_timeout_seconds: 300
