@@ -259,7 +259,74 @@ git push
 
 ---
 
-## 10. What's next (Session 5)
+## 10. Session 6 — Orchestrating dbt from Kestra: errors & resolutions
+
+Wired up `dbt_build.yml`, a Kestra flow that clones the repo, writes a GCP service-account key file, then runs `dbt build` against BigQuery — all inside separate Docker containers stitched together by a `WorkingDirectory` task. Getting this working end-to-end surfaced five distinct bugs, layered on top of each other. Each one only became visible after fixing the previous one, so they're listed in the order they actually appeared.
+
+**Error 1 — `Invalid value for '--project-dir': Path 'taxi_analytics' does not exist`**
+`projectDir` was set to `taxi_analytics`, but the repo clones with the dbt project one level deeper.
+**Resolution:** set `projectDir: dbt-taxi-project/taxi_analytics` (the real path after cloning).
+
+**Error 2 — `[Errno 2] No such file or directory: 'gcp-key.json'` (or `'../../gcp-key.json'`)**
+Even after fixing `projectDir`, dbt couldn't find the key file. The key insight: although `write_gcp_keyfile` and `dbt_build` share the same `WorkingDirectory`, the `dbt build` process actually runs from the **root** of that shared folder — not from inside `projectDir`, despite `projectDir` telling dbt where the project lives. So any relative path in `keyfile` (bare filename, or `../..`-style guessing) was being resolved from the wrong starting point.
+**Resolution:** write the key file to, and reference it from, the *exact same relative path from the shared root* in both tasks: `dbt-taxi-project/taxi_analytics/gcp-key.json`. Consistency matters more than cleverness here.
+
+**Error 3 — `Unable to find 'workingDir' used in the expression`**
+Tried the "safe" option instead — Kestra's built-in `{{ workingDir }}` variable, which gives the full absolute path with no guessing. Worked fine inside `commands:`, but the DbtCLI task's `profiles:` block is rendered in a different context that doesn't expose `workingDir` at all.
+**Resolution:** don't rely on `{{ workingDir }}` inside `profiles:` — use the plain relative path from Error 2 instead.
+
+**Error 4 — `Database Error: Invalid control character at: line 5 column 46`**
+Once the key file was finally *found*, its contents were invalid JSON. Root cause: Kestra's secret backend (`type: env`) stores secrets base64-encoded at rest, but `secret('GCP_SERVICE_ACCOUNT')` **already returns the decoded plaintext** — the decoding happens automatically the moment you reference the secret in a template.
+**Resolution (partial, led to Error 5):** stop assuming the secret needs decoding.
+
+**Error 5 — `base64: invalid input`, then (after removing the redundant decode) still-corrupted key file**
+First tried piping the secret through `base64 -d` — failed immediately, because the secret was already plaintext JSON (see Error 4), so decoding it a second time is like base64-decoding a sentence that was never encoded. Removed that step, but the file was still broken: the private key's escaped `\n` sequences (two literal characters, backslash + n) were coming out as *actual* line breaks, which is invalid inside a JSON string.
+Cause: `echo` in this container's shell (`/bin/sh` → `dash` on Debian-based images) silently expands `\n`-style escapes even without an explicit `-e` flag.
+**Resolution:** write the file with `printf '%s' '{{ secret(...) }}' > ...` instead of `echo`. `printf` never interprets escape sequences inside its `%s` argument, so the JSON's `\n` stays as literal text.
+
+### Working flow (final)
+```yaml
+- id: write_gcp_keyfile
+  type: io.kestra.plugin.scripts.shell.Commands
+  taskRunner:
+    type: io.kestra.plugin.scripts.runner.docker.Docker
+  containerImage: python:3.11-slim
+  commands:
+    - printf '%s' '{{ secret("GCP_SERVICE_ACCOUNT") }}' > dbt-taxi-project/taxi_analytics/gcp-key.json
+
+- id: dbt_build
+  type: io.kestra.plugin.dbt.cli.DbtCLI
+  projectDir: dbt-taxi-project/taxi_analytics
+  taskRunner:
+    type: io.kestra.plugin.scripts.runner.docker.Docker
+  containerImage: python:3.11-slim
+  commands:
+    - dbt build --profiles-dir .
+  profiles: |
+    taxi_analytics:
+      target: prod
+      outputs:
+        prod:
+          type: bigquery
+          method: service-account
+          keyfile: "dbt-taxi-project/taxi_analytics/gcp-key.json"
+          project: kestra-sandbox-499212
+          dataset: dbt_harsha
+          location: europe-west2
+          threads: 4
+          job_timeout_seconds: 300
+```
+
+### General lessons for next time
+- A `WorkingDirectory` task genuinely does share files across sibling Docker containers — if something "isn't found," suspect a path mismatch before suspecting the sharing mechanism itself.
+- Inside a `WorkingDirectory`, don't assume a task's `projectDir`-style config changes its actual running folder — check where the process really executes from, and make every path relative to that same point.
+- Not every Pebble variable (like `workingDir`) is available in every field of every task type — plain relative paths are more portable when in doubt.
+- Secrets backed by `type: env` are already decoded by the time `secret()` returns them — don't decode them again.
+- `echo` is not a safe way to write secret/credential content to a file in an unfamiliar shell — its escape-handling behavior varies by shell (`dash` vs `bash`). `printf '%s'` is the safer default.
+
+---
+
+## 11. What's next (Session 5)
 
 **Incremental models + partitioning/clustering:**
 - Why incremental models exist (cost + speed on large tables — avoid rebuilding everything on every run)
