@@ -1,4 +1,4 @@
-# dbt Student Notes — Sessions 1–4
+# dbt Student Notes — Sessions 1–6
 
 Project: `taxi_analytics` (inside `Data-engineering-zoomcamp` repo)
 GCP project: `kestra-sandbox-499212` · Raw dataset: `zoomcamp_hw_dataset` (location `europe-west2`) · dbt output dataset: `dbt_harsha`
@@ -259,79 +259,254 @@ git push
 
 ---
 
-## 10. Session 6 — Orchestrating dbt from Kestra: errors & resolutions
+## 10. Session 5 — Incremental models + partitioning/clustering
 
-Wired up `dbt_build.yml`, a Kestra flow that clones the repo, writes a GCP service-account key file, then runs `dbt build` against BigQuery — all inside separate Docker containers stitched together by a `WorkingDirectory` task. Getting this working end-to-end surfaced five distinct bugs, layered on top of each other. Each one only became visible after fixing the previous one, so they're listed in the order they actually appeared.
+### The problem being solved
+Before this session, `fct_trips` was a plain `table` — every `dbt run` fully dropped and rebuilt it from scratch, rescanning *all* historical data even though only new rows actually needed processing. Harmless at small scale, but at real-world scale (years of data, daily new batches) this means re-scanning and re-paying for data that hasn't changed since yesterday. BigQuery bills primarily by bytes scanned, so this is a direct cost problem, not just a speed one — same cost-awareness as the `SELECT *` / `COUNT(*)` lessons from earlier BigQuery exercises, now applied to *how tables get built* rather than just how they're queried.
 
-**Error 1 — `Invalid value for '--project-dir': Path 'taxi_analytics' does not exist`**
-`projectDir` was set to `taxi_analytics`, but the repo clones with the dbt project one level deeper.
-**Resolution:** set `projectDir: dbt-taxi-project/taxi_analytics` (the real path after cloning).
+### The core mechanism
 
-**Error 2 — `[Errno 2] No such file or directory: 'gcp-key.json'` (or `'../../gcp-key.json'`)**
-Even after fixing `projectDir`, dbt couldn't find the key file. The key insight: although `write_gcp_keyfile` and `dbt_build` share the same `WorkingDirectory`, the `dbt build` process actually runs from the **root** of that shared folder — not from inside `projectDir`, despite `projectDir` telling dbt where the project lives. So any relative path in `keyfile` (bare filename, or `../..`-style guessing) was being resolved from the wrong starting point.
-**Resolution:** write the key file to, and reference it from, the *exact same relative path from the shared root* in both tasks: `dbt-taxi-project/taxi_analytics/gcp-key.json`. Consistency matters more than cleverness here.
+**`is_incremental()`** — a Jinja macro that returns:
+- `false` on the very first run (table doesn't exist yet) or during `--full-refresh`
+- `true` on every normal run after that
 
-**Error 3 — `Unable to find 'workingDir' used in the expression`**
-Tried the "safe" option instead — Kestra's built-in `{{ workingDir }}` variable, which gives the full absolute path with no guessing. Worked fine inside `commands:`, but the DbtCLI task's `profiles:` block is rendered in a different context that doesn't expose `workingDir` at all.
-**Resolution:** don't rely on `{{ workingDir }}` inside `profiles:` — use the plain relative path from Error 2 instead.
-
-**Error 4 — `Database Error: Invalid control character at: line 5 column 46`**
-Once the key file was finally *found*, its contents were invalid JSON. Root cause: Kestra's secret backend (`type: env`) stores secrets base64-encoded at rest, but `secret('GCP_SERVICE_ACCOUNT')` **already returns the decoded plaintext** — the decoding happens automatically the moment you reference the secret in a template.
-**Resolution (partial, led to Error 5):** stop assuming the secret needs decoding.
-
-**Error 5 — `base64: invalid input`, then (after removing the redundant decode) still-corrupted key file**
-First tried piping the secret through `base64 -d` — failed immediately, because the secret was already plaintext JSON (see Error 4), so decoding it a second time is like base64-decoding a sentence that was never encoded. Removed that step, but the file was still broken: the private key's escaped `\n` sequences (two literal characters, backslash + n) were coming out as *actual* line breaks, which is invalid inside a JSON string.
-Cause: `echo` in this container's shell (`/bin/sh` → `dash` on Debian-based images) silently expands `\n`-style escapes even without an explicit `-e` flag.
-**Resolution:** write the file with `printf '%s' '{{ secret(...) }}' > ...` instead of `echo`. `printf` never interprets escape sequences inside its `%s` argument, so the JSON's `\n` stays as literal text.
-
-### Working flow (final)
-```yaml
-- id: write_gcp_keyfile
-  type: io.kestra.plugin.scripts.shell.Commands
-  taskRunner:
-    type: io.kestra.plugin.scripts.runner.docker.Docker
-  containerImage: python:3.11-slim
-  commands:
-    - printf '%s' '{{ secret("GCP_SERVICE_ACCOUNT") }}' > dbt-taxi-project/taxi_analytics/gcp-key.json
-
-- id: dbt_build
-  type: io.kestra.plugin.dbt.cli.DbtCLI
-  projectDir: dbt-taxi-project/taxi_analytics
-  taskRunner:
-    type: io.kestra.plugin.scripts.runner.docker.Docker
-  containerImage: python:3.11-slim
-  commands:
-    - dbt build --profiles-dir .
-  profiles: |
-    taxi_analytics:
-      target: prod
-      outputs:
-        prod:
-          type: bigquery
-          method: service-account
-          keyfile: "dbt-taxi-project/taxi_analytics/gcp-key.json"
-          project: kestra-sandbox-499212
-          dataset: dbt_harsha
-          location: europe-west2
-          threads: 4
-          job_timeout_seconds: 300
+Used to wrap a `WHERE` filter so only new rows get processed on subsequent runs:
+```sql
+{% if is_incremental() %}
+where pickup_datetime > (select max(pickup_datetime) from {{ this }})
+{% endif %}
 ```
+**`{{ this }}`** = a special dbt variable meaning "the table this model builds" — lets the model look at its own current contents to figure out what's already there before deciding what's new.
 
-### General lessons for next time
-- A `WorkingDirectory` task genuinely does share files across sibling Docker containers — if something "isn't found," suspect a path mismatch before suspecting the sharing mechanism itself.
-- Inside a `WorkingDirectory`, don't assume a task's `projectDir`-style config changes its actual running folder — check where the process really executes from, and make every path relative to that same point.
-- Not every Pebble variable (like `workingDir`) is available in every field of every task type — plain relative paths are more portable when in doubt.
-- Secrets backed by `type: env` are already decoded by the time `secret()` returns them — don't decode them again.
-- `echo` is not a safe way to write secret/credential content to a file in an unfamiliar shell — its escape-handling behavior varies by shell (`dash` vs `bash`). `printf '%s'` is the safer default.
+**Incremental key** — the column used to detect "new" (here, `pickup_datetime`). Should reliably increase as new data arrives; a timestamp/date is the natural choice for event-style data.
+
+### Why partitioning/clustering reappear here
+The `WHERE pickup_datetime > (select max(...) from {{ this }})` filter is only cheap if the table is actually **partitioned** on that same column — otherwise finding the max still requires scanning the whole table, defeating the purpose. This is the same BigQuery partitioning concept from earlier standalone exercises, now configured directly in the dbt model:
+
+```sql
+{{
+    config(
+        materialized='incremental',
+        unique_key='unique_row_id',
+        incremental_strategy='merge',
+        partition_by={
+            "field": "pickup_datetime",
+            "data_type": "timestamp",
+            "granularity": "day"
+        },
+        cluster_by=["pickup_borough"]
+    )
+}}
+```
+- `partition_by` — splits the table physically by day
+- `cluster_by` — sorts rows within each partition by borough, since "trips in a specific borough over a date range" is a realistic query pattern
+
+### Incremental strategy: `merge`
+Two rows-handling options: `append` (just adds new rows, risk of duplicates on reprocessing) vs `merge` (checks a `unique_key` — updates if it exists, inserts if not). Chose `merge` with `unique_key='unique_row_id'` given the duplicate-row issue already found and fixed in Session 4 — protects against reprocessing overlap.
+
+### Commands
+| Command | What it does |
+|---|---|
+| `uv run dbt run --select fct_trips --full-refresh` | Forces a complete drop-and-rebuild — required once to apply new partitioning to an existing table, and anytime the partition/cluster config changes later |
+| `uv run dbt run --select fct_trips` | Normal run — uses the incremental filter once the table already exists |
+
+### Debugging story worth remembering
+Hit a cryptic error: `Syntax error: Expected keyword DEPTH but got identifier "trips"`. Initially assumed it was a scripting/partitioning quirk (dbt-bigquery's `_dbt_max_partition` auto-variable). **The real cause, found by reading the actual compiled SQL rather than guessing from the error message:** the model file had gotten a whole duplicate copy of the CTE chain pasted into it during editing — the config block landed on the same line as the old file's closing `)`, and two full copies of `with trips as (...) ... select * from final` ended up back to back in one file. BigQuery's parser error was a downstream symptom of genuinely malformed SQL (a `WITH` block appearing where a `SELECT` was expected), not a real syntax rule violation.
+
+**Lesson:** when a database error doesn't make sense next to your source file, check the actual **compiled** SQL (`target/run/.../model.sql` for the final run version, `target/compiled/...` for the pre-run version) before assuming it's a deep syntax/config issue. The error is always about what got sent to the database, not necessarily what you think you wrote.
+
+Also learned along the way: `_dbt_max_partition` is a BigQuery scripting variable dbt only auto-declares for the `insert_overwrite` strategy's full-control partition mode — not for `merge`. Using it with `merge` throws `Unrecognized name`. For `merge`, the manual `(select max(col) from {{ this }})` subquery is the correct, standard pattern.
+
+### End-of-session state
+`fct_trips` is now incremental, partitioned by day on `pickup_datetime`, clustered by `pickup_borough`, using `merge` strategy. Verified real incremental behavior by comparing bytes-processed between a `--full-refresh` run and a subsequent normal run in BigQuery's Job History.
 
 ---
 
-## 11. What's next (Session 5)
+## 12. Session 6 — Orchestration + Git Workflow
 
-**Incremental models + partitioning/clustering:**
-- Why incremental models exist (cost + speed on large tables — avoid rebuilding everything on every run)
-- The `is_incremental()` macro
-- `partition_by` / `cluster_by` config in dbt (ties into the BigQuery partitioning/clustering work already covered separately)
-- Full-refresh vs incremental runs
+### Why orchestration
+Every previous session was triggered by hand — typing `dbt run`/`dbt build` and watching it. A real pipeline needs to run unattended. Session 6's goal: chain dbt to the existing `gcp_setup_hw` Kestra flow, so the moment raw data is ready, transformation + testing happens automatically with no manual step.
 
-After that: Session 6 — orchestrating dbt from Kestra, git branching workflow, optional GitHub Actions CI.
+### `dbt build` vs `dbt run` + `dbt test`
+- `dbt run` — builds models only, no checking.
+- `dbt test` — checks already-built data only, changes nothing.
+- `dbt build` — does both together, model by model, in dependency order. If a model's tests fail, dbt stops before building anything downstream of it on bad data. This fail-fast behavior matters far more in an unattended context than when watching the terminal yourself.
+
+### How Kestra runs dbt
+Kestra doesn't have special dbt "understanding" — it runs dbt inside a Docker container via the `io.kestra.plugin.dbt.cli.DbtCLI` task, the same way you'd run it in a terminal, just automated. Auth switches from the local `oauth` method (interactive personal login, fine for a human at a terminal) to `service-account` (a JSON keyfile, required since there's no human to interactively log in during an automated run).
+
+### The final working flow (`dbt_build`, namespace `zoomcamp`)
+
+```yaml
+id: dbt_build
+namespace: zoomcamp
+
+triggers:
+  - id: after_gcp_setup
+    type: io.kestra.plugin.core.trigger.Flow
+    conditions:
+      - type: io.kestra.plugin.core.condition.ExecutionStatus
+        in:
+          - SUCCESS
+      - type: io.kestra.plugin.core.condition.ExecutionFlow
+        namespace: zoomcamp
+        flowId: gcp_setup_hw
+
+tasks:
+  - id: dbt_pipeline
+    type: io.kestra.plugin.core.flow.WorkingDirectory
+    tasks:
+
+      - id: clone_repository
+        type: io.kestra.plugin.git.Clone
+        url: https://github.com/harsha3b/Data-engineering-zoomcamp
+        branch: main
+
+      - id: write_gcp_keyfile
+        type: io.kestra.plugin.scripts.shell.Commands
+        taskRunner:
+          type: io.kestra.plugin.scripts.runner.docker.Docker
+        commands:
+          - echo '{{ secret('GCP_SERVICE_ACCOUNT') }}' > dbt-taxi-project/taxi_analytics/gcp-key.json
+
+      - id: dbt_build
+        type: io.kestra.plugin.dbt.cli.DbtCLI
+        projectDir: dbt-taxi-project/taxi_analytics
+        taskRunner:
+          type: io.kestra.plugin.scripts.runner.docker.Docker
+        containerImage: python:3.11-slim
+        beforeCommands:
+          - pip install --quiet uv
+          - uv venv --quiet
+          - . .venv/bin/activate --quiet
+          - uv pip install --quiet dbt-core dbt-bigquery
+        commands:
+          - dbt build --profiles-dir .
+        profiles: |
+          taxi_analytics:
+            target: prod
+            outputs:
+              prod:
+                type: bigquery
+                method: service-account
+                keyfile: "gcp-key.json"
+                project: "{{ kv('GCP_PROJECT_ID') }}"
+                dataset: dbt_harsha
+                location: "{{ kv('GCP_LOCATION') }}"
+                threads: 4
+                job_timeout_seconds: 300
+```
+
+Key pieces explained:
+- **`triggers:` block** — fires automatically whenever the flow `gcp_setup_hw` (in namespace `zoomcamp`) completes with `SUCCESS`. `flowId` must match the real flow ID exactly — a mismatch here is the single most common reason a trigger silently never fires.
+- **`WorkingDirectory`** — wraps all sub-tasks in one shared folder, so files written by one task (the keyfile) are visible to a later task (`dbt_build`) — necessary because each Docker-backed task otherwise runs in its own fully isolated container filesystem.
+- **`write_gcp_keyfile`** — decodes/retrieves the same `GCP_SERVICE_ACCOUNT` secret used in `gcp_setup_hw`, writing it as a plain JSON file. `secret()` already returns the decoded value — no manual `base64 -d` needed (a mistake repeated from the original `gcp_setup` setup, caught again here).
+- **`profiles:` defined inline** in the task itself, not relying on any `~/.dbt/profiles.yml` existing on a machine — keeps the flow fully self-contained and reproducible from Git alone. `project` and `location` pull from the same `kv()` store used by `gcp_setup_hw`, so they never drift out of sync.
+- **`dbt build --profiles-dir .`** — the fail-fast build+test combo, run against the `prod` target defined inline.
+
+### Debugging story: container isolation, path resolution, and secret handling
+This was the hardest debugging round of the whole curriculum, and the lessons generalize well beyond dbt. Five distinct bugs, layered on top of each other — each only became visible after fixing the previous one.
+
+**1. `Path 'taxi_analytics' does not exist`**
+`projectDir` was set to `taxi_analytics`, but the repo clones with the dbt project one level deeper.
+**Fix:** `projectDir: dbt-taxi-project/taxi_analytics` (the real path, confirmed via `find . -name dbt_project.yml`).
+
+**2. `No such file or directory: 'gcp-key.json'` (or `'../../gcp-key.json'`)**
+Even after fixing `projectDir`, dbt couldn't find the keyfile. The key insight: although `write_gcp_keyfile` and `dbt_build` share the same `WorkingDirectory`, the `dbt build` process actually runs from the **root** of that shared folder — not from inside `projectDir`, despite `projectDir` telling dbt where the *project* lives. So any relative `keyfile` path (bare filename, or guessed `../..`) was resolving from the wrong starting point.
+**Fix:** write the keyfile to, and reference it from, the **exact same relative path from the shared root** in both tasks — `dbt-taxi-project/taxi_analytics/gcp-key.json`, written out in full in both places rather than a shortened relative reference. Consistency beats cleverness here.
+
+**3. `Unable to find 'workingDir' used in the expression`**
+Tried Kestra's built-in `{{ workingDir }}` variable for a "safe" absolute path instead. Works fine inside `commands:`, but the `DbtCLI` task's `profiles:` block renders in a different context that doesn't expose `workingDir` at all.
+**Fix:** don't rely on `{{ workingDir }}` inside `profiles:` — plain relative paths (from fix #2) are more portable across task types.
+
+**4. `Database Error: Invalid control character at: line 5 column 46`**
+Once the keyfile was finally *found*, its contents were invalid JSON.
+**Fix (partial, led to bug #5):** `secret('GCP_SERVICE_ACCOUNT')` already returns the fully decoded plaintext the moment it's referenced in a template — Kestra's secret backend decodes it automatically. No manual decode step should be applied at all.
+
+**5. `base64: invalid input`, then a still-corrupted key file after removing the redundant decode**
+First tried piping through `base64 -d` — failed immediately, since the secret was already plaintext JSON (bug #4), so decoding it again is like base64-decoding a plain sentence. Removed that step, but the file was *still* broken: the private key's escaped `\n` sequences (the two literal characters `\` and `n`) were coming out as real line breaks — invalid inside a JSON string.
+**Root cause:** `echo` in this container's shell (`/bin/sh` → `dash` on Debian-based images) silently expands `\n`-style escapes even without an explicit `-e` flag.
+**Fix:** write the file with `printf '%s' '{{ secret(...) }}' > ...` instead of `echo`. `printf`'s `%s` never interprets escape sequences in its argument, so the JSON's `\n` stays literal text, exactly as needed.
+
+### Working flow (final, confirmed)
+```yaml
+id: dbt_build
+namespace: zoomcamp
+
+triggers:
+  - id: after_gcp_setup
+    type: io.kestra.plugin.core.trigger.Flow
+    conditions:
+      - type: io.kestra.plugin.core.condition.ExecutionStatus
+        in:
+          - SUCCESS
+      - type: io.kestra.plugin.core.condition.ExecutionFlow
+        namespace: zoomcamp
+        flowId: gcp_setup_hw
+
+tasks:
+  - id: dbt_pipeline
+    type: io.kestra.plugin.core.flow.WorkingDirectory
+    tasks:
+
+      - id: clone_repository
+        type: io.kestra.plugin.git.Clone
+        url: https://github.com/harsha3b/Data-engineering-zoomcamp
+        branch: main
+
+      - id: write_gcp_keyfile
+        type: io.kestra.plugin.scripts.shell.Commands
+        taskRunner:
+          type: io.kestra.plugin.scripts.runner.docker.Docker
+        containerImage: python:3.11-slim
+        commands:
+          - printf '%s' '{{ secret("GCP_SERVICE_ACCOUNT") }}' > dbt-taxi-project/taxi_analytics/gcp-key.json
+
+      - id: dbt_build
+        type: io.kestra.plugin.dbt.cli.DbtCLI
+        projectDir: dbt-taxi-project/taxi_analytics
+        taskRunner:
+          type: io.kestra.plugin.scripts.runner.docker.Docker
+        containerImage: python:3.11-slim
+        beforeCommands:
+          - pip install --quiet uv
+          - uv venv --quiet
+          - . .venv/bin/activate --quiet
+          - uv pip install --quiet dbt-core dbt-bigquery
+        commands:
+          - dbt build --profiles-dir .
+        profiles: |
+          taxi_analytics:
+            target: prod
+            outputs:
+              prod:
+                type: bigquery
+                method: service-account
+                keyfile: "dbt-taxi-project/taxi_analytics/gcp-key.json"
+                project: kestra-sandbox-499212
+                dataset: dbt_harsha
+                location: europe-west2
+                threads: 4
+                job_timeout_seconds: 300
+```
+
+### General lessons for next time
+- A `WorkingDirectory` task genuinely does share files across sibling Docker containers — if something "isn't found," suspect a **path mismatch** before suspecting the sharing mechanism itself.
+- Inside a `WorkingDirectory`, don't assume a task's `projectDir`-style config changes its actual *running* folder — check where the process really executes from, and make every path relative to that same point, consistently.
+- Not every Pebble variable (like `workingDir`) is available in every field of every task type — plain relative paths are more portable when in doubt.
+- Secrets backed by `type: env` are already decoded by the time `secret()` returns them — never decode them again.
+- `echo` is not a safe way to write secret/credential content to a file in an unfamiliar shell — its escape-handling behavior varies by shell (`dash` vs `bash`). `printf '%s'` is the safer default for writing credential content verbatim.
+
+### End-of-session verification
+Manually executed `gcp_setup_hw` → watched `dbt_build` fire automatically in the Executions view, with no manual trigger — confirming the full automated chain: **ingest → transform → test**, unattended, exactly as intended.
+
+### Git workflow
+Already an established practice going into this session (branch → commit → PR review on GitHub → merge → delete branch) — no new ground needed here, just applied as usual to this session's flow changes.
+
+### Not covered (optional, for later)
+GitHub Actions CI — automatically running `dbt build` on every PR so a broken model can't merge silently. A natural next step if/when this project moves toward a more team-like workflow.
+
+---
+
+## Curriculum complete
+All six sessions done: dbt installed and connected to BigQuery, a full staging → seed → mart pipeline built and tested on real NYC taxi data, incremental models with partitioning/clustering, and the whole thing running unattended via Kestra orchestration — with a real trail of debugging real, not simulated, problems along the way (duplicate source rows, NULL handling, dbt/BigQuery syntax quirks, and container filesystem isolation). This is a genuinely complete, working analytics engineering pipeline, not just a tutorial exercise.
