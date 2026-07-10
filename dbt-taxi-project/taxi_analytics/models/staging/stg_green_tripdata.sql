@@ -4,19 +4,30 @@ with source as (
 
 ),
 
+deduped as (
+
+    select
+        *,
+        row_number() over (
+            partition by unique_row_id
+            order by filename
+        ) as rn
+
+    from source
+
+),
+
 renamed as (
 
     select
         unique_row_id,
         filename,
 
-        -- ids
         safe_cast(VendorID as int64)      as vendor_id,
         safe_cast(RatecodeID as int64)    as rate_code_id,
         safe_cast(PULocationID as int64)  as pickup_location_id,
         safe_cast(DOLocationID as int64)  as dropoff_location_id,
 
-        -- timestamps
         lpep_pickup_datetime  as pickup_datetime,
         lpep_dropoff_datetime as dropoff_datetime,
 
@@ -25,7 +36,6 @@ renamed as (
         passenger_count,
         trip_distance,
 
-        -- money
         fare_amount,
         extra,
         mta_tax,
@@ -37,7 +47,6 @@ renamed as (
         total_amount,
 
         payment_type,
-        -- human-readable payment type, since the raw column is just an int code
         case payment_type
             when 1 then 'Credit card'
             when 2 then 'Cash'
@@ -48,7 +57,8 @@ renamed as (
             else 'Unknown'
         end as payment_type_description
 
-    from source
+    from deduped
+    where rn = 1
 
 )
 
