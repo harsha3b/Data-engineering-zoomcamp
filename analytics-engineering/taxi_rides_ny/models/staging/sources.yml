@@ -1,0 +1,9 @@
+version: 2
+sources:
+  - name: staging
+    database: kestra-sandbox-499212 # Or name of your GCP project
+    schema: zoomcamp_hw_dataset # Or name of your BigQuery dataset
+    
+    tables:
+      - name: green_tripdata_2019
+      - name: yellow_tripdata_2019
