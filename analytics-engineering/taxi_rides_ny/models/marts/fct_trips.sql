@@ -19,8 +19,8 @@ payment_type_lookup as (
 )
 
 select
-    f.* except (payment_type),
-    p.description as payment_type
+    f.*,
+    p.description as payment_type_description
 from fct_table f
 left join payment_type_lookup p
     on f.payment_type = p.payment_type
