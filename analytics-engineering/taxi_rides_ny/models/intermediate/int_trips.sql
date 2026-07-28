@@ -3,7 +3,7 @@
 -- Note: Data quality analysis available in analyses/trips_data_quality.sql
 
 with unioned as (
-    select * from {{ ref('int_trips_2019_unioned') }}
+    select * from {{ ref('int_trips_unioned') }}
 ),
 
 payment_types as (
@@ -52,14 +52,14 @@ cleaned_and_enriched as (
     left join payment_types pt
         on coalesce(u.payment_type, 0) = pt.payment_type
 ),
-date_cleaned_2019 as (
+date_cleaned as (
     select *
     from cleaned_and_enriched
-    where extract(year from pickup_datetime) = 2019
+    where extract(year from pickup_datetime) in (2019, 2020)
 )
 
 
-select * from date_cleaned_2019
+select * from date_cleaned
 -- Deduplicate: if multiple trips match (same vendor, second, location, service), keep first
 qualify row_number() over(
     partition by vendor_id, pickup_datetime, pickup_location_id, service_type

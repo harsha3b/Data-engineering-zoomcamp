@@ -8,7 +8,7 @@ sources:
     schema: zoomcamp_hw_dataset # Or name of your BigQuery dataset
     
     tables:
-      - name: green_tripdata_2019
+      - name: green_tripdata
         description: |
           Green taxi trip records. Green taxis operate primarily in
           outer boroughs (outside Manhattan).
@@ -55,7 +55,7 @@ sources:
         config:
           loaded_at_field: lpep_pickup_datetime
  
-      - name: yellow_tripdata_2019
+      - name: yellow_tripdata
         description: Yellow taxi trips, primarily from Manhattan
         columns:
           - name: vendorid

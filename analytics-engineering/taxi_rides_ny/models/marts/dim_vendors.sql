@@ -1,6 +1,6 @@
 with vendors as (
     select distinct vendor_id
-    from {{ ref('int_trips_2019_unioned') }}
+    from {{ ref('int_trips_unioned') }}
 )
 
 select
