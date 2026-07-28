@@ -1,5 +1,5 @@
 models:
-  - name: int_trips_2019_unioned
+  - name: int_trips_unioned
     description: Union of green and yellow taxi trip data with normalized schema
     columns:
       - name: vendor_id

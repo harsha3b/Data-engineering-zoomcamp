@@ -1,8 +1,8 @@
 models:
-  - name: stg_green_tripdata_2019
+  - name: stg_green_tripdata
     description: >
       Staging model for green taxi trip data. This model standardizes column names
-      and data types from the raw green_tripdata_2019 source, providing a clean foundation
+      and data types from the raw green_tripdata source, providing a clean foundation
       for downstream transformations.
     columns:
       - name: vendor_id
@@ -48,7 +48,7 @@ models:
       - name: payment_type
         description: Payment method code (1=Credit card, 2=Cash, 3=No charge, 4=Dispute, 5=Unknown, 6=Voided)
 
-  - name: stg_yellow_tripdata_2019
+  - name: stg_yellow_tripdata
     description: >
       Staging model for yellow taxi trip data. This model standardizes column names
       and data types from the raw yellow_tripdata source, providing a clean foundation
