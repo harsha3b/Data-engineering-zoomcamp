@@ -94,6 +94,8 @@ sources:
             description: Total amount charged
         config:
           loaded_at_field: tpep_pickup_datetime
+
+        
     config:
       freshness:
         warn_after: {count: 24, period: hour}
