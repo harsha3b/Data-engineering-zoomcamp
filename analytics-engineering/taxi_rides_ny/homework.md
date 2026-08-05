@@ -69,7 +69,7 @@ What is the count of records in the `fct_monthly_zone_revenue` model?
 
 - 12,998
 - 14,120
-- 12,184
+- 12,184 --Actual answer
 - 15,421
 - 11814 (i got this from big querry. I did some data cleaning so i got this answer)
 
@@ -111,7 +111,7 @@ Create a staging model for the **For-Hire Vehicle (FHV)** trip data for 2019.
 What is the count of records in `stg_fhv_tripdata`?
 
 - 42,084,899
-- 43,244,693
+- 43,244,693 --Answer
 - 22,998,722
 - 44,112,187
 
