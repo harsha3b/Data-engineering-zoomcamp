@@ -94,25 +94,6 @@ sources:
             description: Total amount charged
         config:
           loaded_at_field: tpep_pickup_datetime
-      
-      - name: fhv_tripdata_external
-        description:|
-         "Staged FHV (For-Hire Vehicle) trips. Dispatched rides only — records with null dispatching_base_num excluded."
-        columns:
-          - name: dispatching_base_num
-            description: "TLC base license number of the base that dispatched the trip"
-            tests:
-              - not_null
-          - name: pickup_datetime
-            tests:
-              - not_null
-          - name: dropoff_datetime
-            tests:
-              - not_null
-          - name: pickup_location_id
-            description: "TLC taxi zone ID for pickup — nullable, many FHV trips missing zone data"
-          - name: dropoff_location_id
-            description: "TLC taxi zone ID for dropoff — nullable"
 
         
     config:
