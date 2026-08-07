@@ -2,6 +2,7 @@ from typing import Any, Optional
 
 import dlt
 from dlt.common.pendulum import pendulum
+from dlt.sources.helpers.rest_client.auth import APIKeyAuth
 from dlt.sources.rest_api import (
     RESTAPIConfig,
     check_connection,
@@ -149,6 +150,68 @@ def load_pokemon(base_url: str = "https://pokeapi.co/api/v2/") -> None:
     print(load_info)  # noqa: T201
 
 
+@dlt.source(name="football_data")
+def football_data_source(api_key: str = dlt.secrets.value) -> Any:
+    """Load Manchester United team info and matches from the football-data.org API.
+
+    Args:
+        api_key: football-data.org API token, sent as the `X-Auth-Token` header.
+            Auto-loaded from secrets.toml (sources.football_data.api_key).
+            Get one at https://www.football-data.org/client/register
+    """
+    config: RESTAPIConfig = {
+        "client": {
+            "base_url": "https://api.football-data.org/v4/",
+            # football-data.org uses a custom header for auth, not bearer/api_key
+            # query auth, so we configure APIKeyAuth to send it as a header.
+            "auth": APIKeyAuth(
+                name="X-Auth-Token",
+                api_key=api_key,
+                location="header",
+            ),
+        },
+        "resource_defaults": {
+            "write_disposition": "replace",
+        },
+        "resources": [
+            {
+                "name": "team",
+                "endpoint": {
+                    "path": "teams/66",
+                    # single object response, not a list -> select the whole body
+                    "data_selector": "$",
+                },
+            },
+            {
+                "name": "team_matches",
+                "endpoint": {
+                    "path": "teams/66/matches",
+                    # response is {"filters", "resultSet", "matches": [...]}.
+                    # Not paginated: no next-page link or offset/cursor, just a
+                    # `limit` query param (default 100) capping the single response,
+                    # so no paginator is configured here.
+                    "data_selector": "matches",
+                },
+            },
+        ],
+    }
+
+    yield from rest_api_resources(config)
+
+
+def load_football_data() -> None:
+    pipeline = dlt.pipeline(
+        pipeline_name="rest_api_football_data",
+        destination='duckdb',
+        dataset_name="rest_api_data",
+        dev_mode=True,
+    )
+
+    load_info = pipeline.run(football_data_source().add_limit(1))
+    print(load_info)  # noqa: T201
+
+
 if __name__ == "__main__":
     load_github()
     load_pokemon()
+    load_football_data()
