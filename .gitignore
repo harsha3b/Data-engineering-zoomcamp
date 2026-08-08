@@ -155,6 +155,10 @@ celerybeat.pid
 *.aof
 *.pid
 
+.vscode
+*.json
+*.db
+
 # RabbitMQ
 mnesia/
 rabbitmq/
@@ -238,3 +242,9 @@ __marimo__/
 .streamlit/secrets.toml
 *.json
 harsha_gcp_access/
+
+.bruin.yml
+logs/runs
+logs/*.log
+*.py[cod]
+logs/queries
