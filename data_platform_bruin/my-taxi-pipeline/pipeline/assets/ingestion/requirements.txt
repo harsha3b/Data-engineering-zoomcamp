@@ -1,9 +1,28 @@
-# TODO: Add Python dependencies required by the python ingestion asset.
-# - Keep this intentionally minimal.
-# - Pin versions for reproducibility.
-# Docs: https://getbruin.com/docs/bruin/assets/python
-#
-# Example:
-# pandas==2.2.0
-# requests==2.31.0
-
+certifi==2026.7.22
+    # via requests
+charset-normalizer==3.4.9
+    # via requests
+idna==3.18
+    # via requests
+numpy==2.4.6
+    # via
+    #   pandas
+    #   pyarrow
+pandas==2.2.3
+    # via -r requirements.txt
+pyarrow==18.1.0
+    # via -r requirements.txt
+python-dateutil==2.9.0.post0
+    # via
+    #   -r requirements.txt
+    #   pandas
+pytz==2026.3.post1
+    # via pandas
+requests==2.32.3
+    # via -r requirements.txt
+six==1.17.0
+    # via python-dateutil
+tzdata==2026.3
+    # via pandas
+urllib3==2.7.0
+    # via requests
