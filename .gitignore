@@ -60,7 +60,7 @@ _SUCCESS
 *.manifest
 *.spec
 
-
+cli_cmd 
 
 # Installer logs
 pip-log.txt
