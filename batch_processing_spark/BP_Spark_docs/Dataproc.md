@@ -116,6 +116,47 @@ Notes:
 
 ---
 
+## 5a. Job Submission — Writing Output to BigQuery
+
+When the job writes its result via the Spark BigQuery connector (`df.write.format('bigquery')...`), the submit command is simpler than you'd expect — **don't pass `--jars`**:
+
+```bash
+gcloud dataproc jobs submit pyspark \
+    --cluster=nyc-taxi-cluster \
+    --region=europe-west3 \
+    gs://spark-tutorial-pq/code/06_spark_sql_bigquerry.py \
+    -- \
+        --input_green=gs://spark-tutorial-pq/pq/green/2020/01/ \
+        --input_yellow=gs://spark-tutorial-pq/pq/yellow/2020/01/ \
+        --output=kestra-sandbox-499212.spark_sql_BQ.report-2020-01
+```
+
+**Why we removed `--jars=gs://spark-lib/bigquery/spark-bigquery-latest_2.12.jar`:**
+We initially submitted with that flag (the connector jar is commonly recommended in older tutorials). The job failed immediately on `spark.read.parquet(...)` with:
+```
+java.util.ServiceConfigurationError: org.apache.spark.sql.sources.DataSourceRegister:
+com.google.cloud.spark.bigquery.BigQueryRelationProvider not a subtype
+```
+Dataproc image `2.3.34-debian12` already bundles the connector at `/usr/lib/spark/jars/spark-3.5-bigquery-0.42.3.jar`. Adding `--jars` pulled in a *second* copy of the same class, loaded by a different classloader — Spark's `ServiceLoader` found two incompatible versions of `BigQueryRelationProvider` and errored before the job could even read the input parquet files. Dropping `--jars` (letting the cluster use its pre-installed connector) fixed it — no code change needed.
+
+**Second issue after that fix — IAM, not code/jars:**
+With `--jars` removed, parquet reads and the Spark SQL transform ran fine, but the BigQuery *write* failed with:
+```
+403 Permission Denied — bigquery.tables.get denied on table PROJECT:dataset.table (or it may not exist)
+```
+Cause: the cluster runs as the **default Compute Engine service account** (`PROJECT_NUMBER-compute@developer.gserviceaccount.com`), and newer GCP projects no longer auto-grant it `roles/editor`. It had `roles/dataproc.worker` + `roles/iam.serviceAccountUser` only — no BigQuery access at all. Fixed by granting it BigQuery roles at the project level:
+```bash
+SA="PROJECT_NUMBER-compute@developer.gserviceaccount.com"
+gcloud projects add-iam-policy-binding YOUR_PROJECT_ID \
+  --member="serviceAccount:${SA}" --role="roles/bigquery.dataEditor" --condition=None
+
+gcloud projects add-iam-policy-binding YOUR_PROJECT_ID \
+  --member="serviceAccount:${SA}" --role="roles/bigquery.jobUser" --condition=None
+```
+`bigquery.dataEditor` lets it create/write tables; `bigquery.jobUser` lets it run the load/query jobs the connector issues under the hood. After both fixes, the job wrote successfully.
+
+---
+
 ## 6. Cluster Status / Delete — CLI
 
 ```bash
@@ -199,3 +240,5 @@ gcloud dataproc clusters delete nyc-taxi-cluster --region=europe-west3 --quiet
 - "Failed to validate permissions for default service account" warning → fixed by enabling **Cloud Resource Manager API**.
 - Use `gcloud storage cp` (not `gsutil cp`) — current recommended CLI; drop `-m`/`-r` for single files.
 - GCS buckets and staging buckets are **not deleted** when the cluster is deleted — only compute resources go away.
+- Writing to BigQuery with the Spark connector: don't pass `--jars=gs://spark-lib/bigquery/...` — the cluster image already bundles the connector, and adding it again causes a classloader conflict (`ServiceConfigurationError: ... not a subtype`) that breaks even the input parquet read. See §5a.
+- BigQuery write can also fail with `403 ... bigquery.tables.get denied` even after the jar fix — the default Compute Engine service account has no BigQuery roles on newer projects. Grant it `roles/bigquery.dataEditor` + `roles/bigquery.jobUser`. See §5a.
