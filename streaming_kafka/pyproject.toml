@@ -1,0 +1,22 @@
+[project]
+name = "streaming-kafka"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+authors = [
+    { name = "harsha3b", email = "73805425+harsha3b@users.noreply.github.com" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "jupyter>=1.1.1",
+    "kafka-python>=3.0.11",
+    "pandas>=3.0.5",
+    "pyarrow>=25.0.1",
+]
+
+[project.scripts]
+streaming-kafka = "streaming_kafka:main"
+
+[build-system]
+requires = ["uv_build>=0.12.3,<0.13.0"]
+build-backend = "uv_build"
