@@ -61,7 +61,7 @@ producer = KafkaProducer(
     value_serializer=ride_serializer,
 )
 
-topic_name = 'rides'
+topic_name = 'live_rides'
 count = 0
 
 print("Sending events (Ctrl+C to stop)...")
