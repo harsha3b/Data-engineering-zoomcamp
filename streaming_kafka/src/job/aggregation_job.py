@@ -1,9 +1,43 @@
 from pyflink.datastream import StreamExecutionEnvironment
+from pyflink.java_gateway import get_gateway
 from pyflink.table import EnvironmentSettings, StreamTableEnvironment
+
+POSTGRES_URL = 'jdbc:postgresql://postgres:5432/postgres'
+POSTGRES_USER = 'postgres'
+POSTGRES_PASSWORD = 'postgres'
+
+
+def ensure_postgres_table(table_name, columns_ddl):
+    """Flink's JDBC sink DDL only registers a table in Flink's catalog, it
+    never creates the table in Postgres itself, so the physical table has
+    to be created here first or every insert fails with
+    'relation "..." does not exist'."""
+    jvm = get_gateway().jvm
+    conn = jvm.java.sql.DriverManager.getConnection(
+        POSTGRES_URL, POSTGRES_USER, POSTGRES_PASSWORD
+    )
+    try:
+        stmt = conn.createStatement()
+        try:
+            stmt.execute(f'CREATE TABLE IF NOT EXISTS {table_name} ({columns_ddl})')
+        finally:
+            stmt.close()
+    finally:
+        conn.close()
 
 
 def create_events_aggregated_sink(t_env):
     table_name = 'processed_events_aggregated'
+    ensure_postgres_table(
+        table_name,
+        """
+        window_start TIMESTAMP,
+        pulocationid INTEGER,
+        num_trips BIGINT,
+        total_revenue DOUBLE PRECISION,
+        PRIMARY KEY (window_start, pulocationid)
+        """,
+    )
     sink_ddl = f"""
         CREATE TABLE {table_name} (
             window_start TIMESTAMP(3),
@@ -13,10 +47,10 @@ def create_events_aggregated_sink(t_env):
             PRIMARY KEY (window_start, PULocationID) NOT ENFORCED
         ) WITH (
             'connector' = 'jdbc',
-            'url' = 'jdbc:postgresql://postgres:5432/postgres',
+            'url' = '{POSTGRES_URL}',
             'table-name' = '{table_name}',
-            'username' = 'postgres',
-            'password' = 'postgres',
+            'username' = '{POSTGRES_USER}',
+            'password' = '{POSTGRES_PASSWORD}',
             'driver' = 'org.postgresql.Driver'
         );
         """
@@ -37,7 +71,7 @@ def create_events_source_kafka(t_env):
         ) WITH (
             'connector' = 'kafka',
             'properties.bootstrap.servers' = 'redpanda:29092',
-            'topic' = 'live_rides',
+            'topic' = 'rides',
             'scan.startup.mode' = 'earliest-offset',
             'properties.auto.offset.reset' = 'earliest',
             'format' = 'json'
