@@ -52,3 +52,4 @@ for message in consumer:
 consumer.close()
 cur.close()
 conn.close()
+

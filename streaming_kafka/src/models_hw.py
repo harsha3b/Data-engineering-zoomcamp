@@ -10,7 +10,6 @@ class gt_Ride:
     DOLocationID: int
     passenger_count: int
     trip_distance: float
-    trip_distance: float
     tip_amount: float
     total_amount: float
 

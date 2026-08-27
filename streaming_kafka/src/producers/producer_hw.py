@@ -11,7 +11,7 @@ from kafka import KafkaProducer
 from models_hw import gt_Ride, gt_ride_from_row
 
 # Download NYC green taxi trip data (first 1000 rows)
-url = "https://d37ci6vzurychx.cloudfront.net/trip-data/green_tripdata_2025-11.parquet"
+url = "https://d37ci6vzurychx.cloudfront.net/trip-data/green_tripdata_2025-10.parquet"
 columns = ['PULocationID', 'DOLocationID','passenger_count', 'trip_distance', 'tip_amount', 'total_amount', 'lpep_pickup_datetime','lpep_dropoff_datetime']
 df = pd.read_parquet(url, columns=columns)
 df['passenger_count'] = df['passenger_count'].fillna(0)
